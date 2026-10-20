@@ -10,7 +10,13 @@ A quiet, offline home for Word documents. Open, preview and edit `.docx` files, 
 
 Download `nebula-docx.exe` from [GitHub Releases](https://github.com/Porkstone/nebula-docx/releases/latest). This installs the Windows x64 application, also named `nebula-docx.exe`. Supports Windows 10 and Windows 11, x64. The installer is unsigned; Windows may show an unknown-publisher prompt.
 
-Chocolatey distribution is on hold. No package has been submitted for approval, and CI does not create Chocolatey packages.
+Chocolatey packages are provided with GitHub Releases. Community installation requires the package to pass Chocolatey's moderation process:
+
+```powershell
+choco install nebula-docx
+```
+
+Until approval, download the installer directly or install a downloaded `.nupkg` using `choco install nebula-docx --source <folder-containing-the-package>`. Package publication is handled manually after testing; CI does not publish packages.
 
 ## Features
 

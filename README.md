@@ -10,13 +10,31 @@ A quiet, offline home for Word documents. Open, preview and edit `.docx` files, 
 
 Download `nebula-docx.exe` from [GitHub Releases](https://github.com/Porkstone/nebula-docx/releases/latest). This installs the Windows x64 application, also named `nebula-docx.exe`. Supports Windows 10 and Windows 11, x64. The installer is unsigned; Windows may show an unknown-publisher prompt.
 
-Chocolatey packages are provided with GitHub Releases. Community installation requires the package to pass Chocolatey's moderation process:
+### Install with Chocolatey
+
+Chocolatey project page: [nebula-docx on Chocolatey Community](https://community.chocolatey.org/packages/nebula-docx).
+
+The package is awaiting submission and moderation approval, so the community listing and installation command below will become available after approval.
+
+Once approved, [install Chocolatey](https://docs.chocolatey.org/en-us/choco/setup/) if needed, open **PowerShell as Administrator**, and run:
 
 ```powershell
-choco install nebula-docx
+choco install nebula-docx --yes
 ```
 
-Until approval, download the installer directly or install a downloaded `.nupkg` using `choco install nebula-docx --source <folder-containing-the-package>`. Package publication is handled manually after testing; CI does not publish packages.
+To update an existing installation:
+
+```powershell
+choco upgrade nebula-docx --yes
+```
+
+Before community approval, download `nebula-docx.1.1.0.nupkg` from [GitHub Releases](https://github.com/Porkstone/nebula-docx/releases/latest) into your **Downloads** folder, then install it from an administrator PowerShell window:
+
+```powershell
+choco install nebula-docx --version 1.1.0 --source "$env:USERPROFILE\Downloads" --yes
+```
+
+Package publication is handled manually after testing; CI does not publish packages.
 
 ## Features
 

@@ -16,7 +16,7 @@ Download `nebula-docx-1.2.0.exe` from [GitHub Releases](https://github.com/Porks
 
 Chocolatey project page: [nebula-docx on Chocolatey Community](https://community.chocolatey.org/packages/nebula-docx).
 
-The package is awaiting submission and moderation approval, so the community listing and installation command below will become available after approval.
+Version [1.2.0 has been submitted to Chocolatey](https://community.chocolatey.org/packages/nebula-docx/1.2.0) and is awaiting automated checks and moderation approval. The community installation command below becomes available after approval.
 
 Once approved, [install Chocolatey](https://docs.chocolatey.org/en-us/choco/setup/) if needed, open **PowerShell as Administrator**, and run:
 

@@ -1,0 +1,42 @@
+name: Verify and build Windows app
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - run: pnpm notices
+      - run: pnpm dist:win
+      - name: Test packaged app
+        shell: pwsh
+        run: |
+          $env:NEBULA_TEST_EXECUTABLE = (Resolve-Path 'release/win-unpacked/Nebula DOCX.exe').Path
+          pnpm test
+      - name: Verify silent install and uninstall
+        shell: pwsh
+        run: ./scripts/test-installer.ps1
+      - run: ./scripts/package-chocolatey.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nebula-docx-windows
+          path: |
+            release/*.exe
+            release/*.nupkg
+            release/SHA256SUMS.txt
+            test-results/

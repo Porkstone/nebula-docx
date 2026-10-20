@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.ico binary
+*.png binary
+*.docx binary
+# Preserve upstream license text verbatim, including its original whitespace.
+THIRD-PARTY-NOTICES.txt -whitespace

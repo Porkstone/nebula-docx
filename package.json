@@ -1,14 +1,14 @@
 {
   "name": "nebula-docx",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
     "dev:web": "vite",
     "build": "tsc && vite build",
     "start": "electron .",
-    "test": "node scripts/smoke-test.mjs && node scripts/editor-test.mjs",
+    "test": "node scripts/smoke-test.mjs && node scripts/editor-test.mjs && node scripts/theme-test.mjs",
     "fixtures": "node scripts/create-fixtures.mjs",
     "dist:win": "pnpm build && electron-builder --win --x64 --publish never",
     "notices": "node scripts/notices.mjs",

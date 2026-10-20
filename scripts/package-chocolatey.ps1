@@ -3,13 +3,13 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $package = Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw | ConvertFrom-Json
 $version = $package.version
-if (-not $Installer) { $Installer = Join-Path $root 'release/nebula-docx.exe' }
+if (-not $Installer) { $Installer = Join-Path $root "release/nebula-docx-$version.exe" }
 $resolvedInstaller = (Resolve-Path -LiteralPath $Installer).Path
 $hash = (Get-FileHash -LiteralPath $resolvedInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
 $tools = Join-Path $root 'packaging/chocolatey/tools/chocolateyinstall.ps1'
 $script = [System.IO.File]::ReadAllText($tools)
 $script = $script -replace "checksum64\s*=\s*'[^']+'", "checksum64     = '$hash'"
-$downloadUrl = "https://github.com/Porkstone/nebula-docx/releases/download/v$version/nebula-docx.exe"
+$downloadUrl = "https://github.com/Porkstone/nebula-docx/releases/download/v$version/nebula-docx-$version.exe"
 $script = $script -replace "url64bit\s*=\s*'[^']+'", "url64bit       = '$downloadUrl'"
 [System.IO.File]::WriteAllText($tools, $script, [System.Text.UTF8Encoding]::new($false))
 $nuspecPath = Join-Path $root 'packaging/chocolatey/nebula-docx.nuspec'

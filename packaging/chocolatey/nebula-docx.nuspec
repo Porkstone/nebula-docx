@@ -2,12 +2,12 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>nebula-docx</id>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <title>Nebula DOCX</title>
     <authors>Porkstone</authors>
     <owners>Porkstone</owners>
     <projectUrl>https://github.com/Porkstone/nebula-docx</projectUrl>
-    <iconUrl>https://raw.githubusercontent.com/Porkstone/nebula-docx/v1.1.0/build/icon.png</iconUrl>
+    <iconUrl>https://raw.githubusercontent.com/Porkstone/nebula-docx/v1.2.0/build/icon.png</iconUrl>
     <packageSourceUrl>https://github.com/Porkstone/nebula-docx/tree/main/packaging/chocolatey</packageSourceUrl>
     <docsUrl>https://github.com/Porkstone/nebula-docx#readme</docsUrl>
     <bugTrackerUrl>https://github.com/Porkstone/nebula-docx/issues</bugTrackerUrl>
@@ -25,12 +25,13 @@ Features:
 - Save edited DOCX copies with unsaved-change protection and preservation of original headers, footers and final page settings.
 - Print using the Windows print dialog, including Microsoft Print to PDF.
 - Export Markdown with embedded images, or Markdown plus image files in a ZIP.
+- Choose Light, Dark or System appearance with a saved local preference.
 - No accounts, uploads, telemetry or network access in the installed app.
 
 Requires Windows 10 or 11 x64. Legacy .doc and encrypted documents are unsupported. Preview layout may differ from Microsoft Word, especially for complex layouts, fonts and automatic pagination. Edited copies may simplify advanced Word body formatting. The installed executable is nebula-docx.exe. This package installs for all users and requires administrator rights. The installer is unsigned.
 
 Nebula DOCX is not affiliated with or endorsed by Microsoft.]]></description>
-    <releaseNotes>https://github.com/Porkstone/nebula-docx/releases/tag/v1.1.0</releaseNotes>
+    <releaseNotes>https://github.com/Porkstone/nebula-docx/releases/tag/v1.2.0</releaseNotes>
     <tags>nebula-docx docx word viewer editor markdown converter print offline admin</tags>
   </metadata>
   <files><file src="tools\**" target="tools" /></files>

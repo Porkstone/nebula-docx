@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, session, clipboard } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, session, clipboard, nativeTheme } = require('electron')
 const { readFile, writeFile, stat, mkdir, mkdtemp, rm, rename } = require('node:fs/promises')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
@@ -15,6 +15,16 @@ let mainWindow, rendererReady = false, queuedPath, printing = false
 let documentDirty = false, confirmingClose = false
 const MAX_BYTES = 40 * 1024 * 1024
 const historyPath = () => path.join(app.getPath('userData'), 'recent-files.json')
+const settingsPath = () => path.join(app.getPath('userData'), 'settings.json')
+let appearance = 'system'
+const validAppearance = value => ['light', 'dark', 'system'].includes(value)
+async function loadAppearance() {
+  try {
+    const settings = JSON.parse(await readFile(settingsPath(), 'utf8'))
+    if (validAppearance(settings.appearance)) appearance = settings.appearance
+  } catch { /* A missing or damaged preference uses the system appearance. */ }
+  nativeTheme.themeSource = appearance
+}
 async function history() {
   try { const value = JSON.parse(await readFile(historyPath(), 'utf8')); return Array.isArray(value) ? value.filter(item => typeof item.path === 'string' && typeof item.id === 'string').slice(0, 8) : [] } catch { return [] }
 }
@@ -71,9 +81,9 @@ async function printDocument(html) {
 function command(name) { mainWindow?.webContents.send('app:command', name) }
 function createWindow() {
   rendererReady = false
-  mainWindow = new BrowserWindow({ width: 1360, height: 940, minWidth: 900, minHeight: 650, title: 'Nebula DOCX', backgroundColor: '#f4f7f1', icon: app.isPackaged ? path.join(process.resourcesPath, 'icon.ico') : path.join(__dirname, '../build/icon.ico'), show: false, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } })
+  mainWindow = new BrowserWindow({ width: 1360, height: 940, minWidth: 900, minHeight: 650, title: 'Nebula DOCX', backgroundColor: nativeTheme.shouldUseDarkColors ? '#040E12' : '#F4F8F9', icon: app.isPackaged ? path.join(process.resourcesPath, 'icon.ico') : path.join(__dirname, '../build/icon.ico'), show: false, webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } })
   harden(mainWindow)
-  mainWindow.once('ready-to-show', () => mainWindow.show())
+  mainWindow.once('ready-to-show', () => { if (rendererReady) mainWindow.show() })
   mainWindow.on('closed', () => { mainWindow = null; rendererReady = false })
   mainWindow.on('close', event => {
     if (!documentDirty) return
@@ -99,13 +109,23 @@ else {
   queuedPath = docxArgument(process.argv.slice(1))
   app.on('second-instance', (_event, args) => { if (mainWindow?.isMinimized()) mainWindow.restore(); mainWindow?.focus(); const filename = docxArgument(args); if (filename) void dispatchFile(filename) })
   app.on('open-file', (event, filename) => { event.preventDefault(); void dispatchFile(filename) })
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await loadAppearance()
+    nativeTheme.on('updated', () => mainWindow?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#040E12' : '#F4F8F9'))
     session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
     session.defaultSession.setPermissionCheckHandler(() => false)
     session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
       const url = new URL(details.url)
       const localDev = development && ['http:', 'ws:'].includes(url.protocol) && url.hostname === '127.0.0.1' && url.port === '5173'
       callback({ cancel: !localDev && !['file:', 'data:', 'blob:', 'about:', 'devtools:'].includes(url.protocol) })
+    })
+    handle('appearance:get', () => appearance)
+    handle('appearance:set', async value => {
+      if (!validAppearance(value)) throw new Error('Choose Light, Dark or System appearance.')
+      await mkdir(app.getPath('userData'), { recursive: true })
+      await writeFile(settingsPath(), JSON.stringify({ appearance: value }, null, 2))
+      appearance = value
+      nativeTheme.themeSource = value
     })
     handle('document:open', async () => { const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Word document', filters: [{ name: 'Word documents', extensions: ['docx'] }], properties: ['openFile'] }); return result.canceled ? null : openDocument(result.filePaths[0]) })
     handle('document:recent', async () => (await history()).map(({ id, name, openedAt }) => ({ id, name, openedAt })))
@@ -137,7 +157,7 @@ else {
       if (typeof text !== 'string' || Buffer.byteLength(text) > 180 * 1024 * 1024) throw new Error('Invalid clipboard request.')
       clipboard.writeText(text)
     })
-    ipcMain.on('app:ready', event => { if (!trusted(event)) return; rendererReady = true; if (queuedPath) { const filename = queuedPath; queuedPath = null; void dispatchFile(filename) } })
+    ipcMain.on('app:ready', event => { if (!trusted(event)) return; rendererReady = true; mainWindow.show(); if (queuedPath) { const filename = queuedPath; queuedPath = null; void dispatchFile(filename) } })
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: 'File', submenu: [{ label: 'Open DOCX…', accelerator: 'CmdOrCtrl+O', click: () => command('open') }, { label: 'Save DOCX copy…', accelerator: 'CmdOrCtrl+S', click: () => command('saveDocx') }, { label: 'Export Markdown…', accelerator: 'CmdOrCtrl+Shift+M', click: () => command('exportMarkdown') }, { label: 'Print…', accelerator: 'CmdOrCtrl+P', click: () => command('print') }, { type: 'separator' }, { role: 'quit' }] },
       { label: 'Edit', submenu: [{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },

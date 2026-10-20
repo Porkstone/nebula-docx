@@ -1,6 +1,8 @@
 export interface OpenedFile { name: string; bytes: Uint8Array; id?: string }
 export interface RecentFile { id: string; name: string; openedAt: string }
 export interface NativeBridge {
+  appearance: () => Promise<'light' | 'dark' | 'system'>
+  setAppearance: (theme: 'light' | 'dark' | 'system') => Promise<void>
   open: () => Promise<OpenedFile | null>
   recent: () => Promise<RecentFile[]>
   openRecent: (id: string) => Promise<OpenedFile>

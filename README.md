@@ -6,9 +6,11 @@ A quiet, offline home for Word documents. Open, preview and edit `.docx` files, 
 
 ![Nebula DOCX edit mode](docs/images/editor.png)
 
+Also available in [light mode](docs/images/light-theme.png), or choose **System** to follow Windows appearance.
+
 ## Download
 
-Download `nebula-docx.exe` from [GitHub Releases](https://github.com/Porkstone/nebula-docx/releases/latest). This installs the Windows x64 application, also named `nebula-docx.exe`. Supports Windows 10 and Windows 11, x64. The installer is unsigned; Windows may show an unknown-publisher prompt.
+Download `nebula-docx-1.2.0.exe` from [GitHub Releases](https://github.com/Porkstone/nebula-docx/releases/latest). Installer filenames include the release version; the installed application is named `nebula-docx.exe`. Supports Windows 10 and Windows 11, x64. The installer is unsigned; Windows may show an unknown-publisher prompt.
 
 ### Install with Chocolatey
 
@@ -28,10 +30,10 @@ To update an existing installation:
 choco upgrade nebula-docx --yes
 ```
 
-Before community approval, download `nebula-docx.1.1.0.nupkg` from [GitHub Releases](https://github.com/Porkstone/nebula-docx/releases/latest) into your **Downloads** folder, then install it from an administrator PowerShell window:
+Before community approval, download `nebula-docx.1.2.0.nupkg` from [GitHub Releases](https://github.com/Porkstone/nebula-docx/releases/latest) into your **Downloads** folder, then install it from an administrator PowerShell window:
 
 ```powershell
-choco install nebula-docx --version 1.1.0 --source "$env:USERPROFILE\Downloads" --yes
+choco install nebula-docx --version 1.2.0 --source "$env:USERPROFILE\Downloads" --yes
 ```
 
 Package publication is handled manually after testing; CI does not publish packages.
@@ -46,6 +48,7 @@ Package publication is handled manually after testing; CI does not publish packa
 - Print the document through the Windows print dialog, including **Microsoft Print to PDF**.
 - Export a `.md` file with embedded images, or a ZIP containing Markdown and an `images/` folder.
 - Reopen the eight most recent documents. Only file locations are saved locally; document contents are not cached.
+- Choose **Light**, **Dark**, or **System** from the appearance selector in the top-right corner. The preference is saved locally; System follows Windows appearance changes. Word document pages keep their own colours for preview, editing and printing.
 
 Keyboard shortcuts: **Ctrl+O** open, **Ctrl+F** find, **Ctrl+P** print, **Ctrl+S** save a DOCX copy, **Ctrl+Shift+M** export Markdown. In edit mode use **Ctrl+Z / Ctrl+Shift+Z** for undo/redo and **Ctrl+B / Ctrl+I / Ctrl+U** for formatting. **Enter/Shift+Enter** advances through search results in the viewer.
 
@@ -66,6 +69,8 @@ Markdown preserves supported headings, emphasis, lists, hyperlinks, images and s
 All processing is local. The installed app blocks network requests, does not run macros, disables Node.js in the renderer, and uses Electron sandboxing and context isolation. The document preview runs in a scriptless iframe and is sanitised with DOMPurify. Embedded HTML chunks and external-file access are disabled. OS file and export dialogs are handled through a narrow, sender-validated preload bridge.
 
 Recent file locations are stored in `%APPDATA%/Nebula DOCX/recent-files.json`. To clear history, close the app and delete that file. Uninstalling keeps these preferences.
+
+The appearance preference is stored in `%APPDATA%/Nebula DOCX/settings.json`. Delete that file with the app closed to reset to System appearance.
 
 ## Development
 

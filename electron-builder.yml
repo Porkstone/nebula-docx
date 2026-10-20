@@ -24,7 +24,7 @@ win:
     - target: nsis
       arch: [x64]
   icon: build/icon.ico
-  artifactName: nebula-docx.${ext}
+  artifactName: nebula-docx-${version}.${ext}
   signAndEditExecutable: true
 nsis:
   include: build/installer.nsh

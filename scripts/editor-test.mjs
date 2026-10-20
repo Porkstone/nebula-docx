@@ -38,6 +38,7 @@ try {
   await page.getByText('DOCX copy saved successfully.', { exact: true }).waitFor()
   assert.deepEqual(await fs.readFile(unchangedPath), sourceBytes, 'Undoing all changes must retain the original DOCX byte for byte')
   await page.getByRole('button', { name: 'Redo', exact: true }).click()
+  await heading.click()
   await page.keyboard.press('Home'); await page.keyboard.press('Shift+End')
   await page.getByRole('button', { name: 'Bold', exact: true }).click()
   assert.equal(await heading.locator('strong').innerText(), 'Edited title')

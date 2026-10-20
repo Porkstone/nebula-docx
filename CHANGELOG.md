@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+
+- Apply the Nebula Applications brand guide: teal surfaces, cyan selection and focus, orange primary actions, Segoe UI and clearer text sizes.
+- Add Light, Dark and System appearance across the app, with a saved local preference and live Windows appearance updates in System mode.
+- Keep document page colours independent of the interface theme and preserve printed output.
+- Improve control wrapping and long document titles at smaller window sizes.
+- Include the release version in installer filenames (`nebula-docx-1.2.0.exe`), while retaining `nebula-docx.exe` for the installed application.
+- Synchronize installer tests, release documentation and Chocolatey download URLs with the versioned filename.
+
 ## 1.1.0
 
 - Rename the installed application and installer download to `nebula-docx.exe`.

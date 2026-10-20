@@ -5,6 +5,8 @@ const subscribe = (channel, callback) => {
   return () => ipcRenderer.removeListener(channel, listener)
 }
 contextBridge.exposeInMainWorld('nebula', {
+  appearance: () => ipcRenderer.invoke('appearance:get'),
+  setAppearance: theme => ipcRenderer.invoke('appearance:set', theme),
   open: () => ipcRenderer.invoke('document:open'),
   recent: () => ipcRenderer.invoke('document:recent'),
   openRecent: id => ipcRenderer.invoke('document:open-recent', id),

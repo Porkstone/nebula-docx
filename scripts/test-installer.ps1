@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$installer = Join-Path $root 'release/nebula-docx.exe'
+$version = (Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
+$installer = Join-Path $root "release/nebula-docx-$version.exe"
 $target = Join-Path $root 'release/install-smoke'
 if (Get-ItemProperty 'HKLM:/Software/Microsoft/Windows/CurrentVersion/Uninstall/*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'Nebula DOCX*' }) { throw 'Nebula DOCX is already installed. Run installer verification in a clean VM.' }
 $docxKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('Software\Classes\.docx')

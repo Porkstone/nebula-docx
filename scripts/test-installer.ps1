@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$installer = Join-Path $root 'release/Nebula-DOCX-Setup-1.0.0-x64.exe'
+$installer = Join-Path $root 'release/nebula-docx.exe'
 $target = Join-Path $root 'release/install-smoke'
 if (Get-ItemProperty 'HKLM:/Software/Microsoft/Windows/CurrentVersion/Uninstall/*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'Nebula DOCX*' }) { throw 'Nebula DOCX is already installed. Run installer verification in a clean VM.' }
 $docxKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('Software\Classes\.docx')
@@ -8,8 +8,8 @@ $defaultBefore = if ($docxKey) { $docxKey.GetValue('') } else { $null }
 if ($docxKey) { $docxKey.Close() }
 $process = Start-Process -FilePath $installer -ArgumentList @('/S','/allusers',"/D=$target") -WindowStyle Hidden -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "Silent install failed: $($process.ExitCode)" }
-$executable = Join-Path $target 'Nebula DOCX.exe'
-$uninstaller = Join-Path $target 'Uninstall Nebula DOCX.exe'
+$executable = Join-Path $target 'nebula-docx.exe'
+$uninstaller = Join-Path $target 'Uninstall nebula-docx.exe'
 try {
   if (-not (Test-Path -LiteralPath $executable)) { throw 'Installed executable missing.' }
   $entry = Get-ItemProperty 'HKLM:/Software/Microsoft/Windows/CurrentVersion/Uninstall/*' | Where-Object { $_.DisplayName -like 'Nebula DOCX*' }

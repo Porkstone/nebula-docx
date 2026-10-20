@@ -19,11 +19,12 @@ extraResources:
 nodeGypRebuild: false
 npmRebuild: false
 win:
+  executableName: nebula-docx
   target:
     - target: nsis
       arch: [x64]
   icon: build/icon.ico
-  artifactName: Nebula-DOCX-Setup-${version}-${arch}.${ext}
+  artifactName: nebula-docx.${ext}
   signAndEditExecutable: true
 nsis:
   include: build/installer.nsh

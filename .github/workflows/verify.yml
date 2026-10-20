@@ -26,17 +26,14 @@ jobs:
       - name: Test packaged app
         shell: pwsh
         run: |
-          $env:NEBULA_TEST_EXECUTABLE = (Resolve-Path 'release/win-unpacked/Nebula DOCX.exe').Path
+          $env:NEBULA_TEST_EXECUTABLE = (Resolve-Path 'release/win-unpacked/nebula-docx.exe').Path
           pnpm test
       - name: Verify silent install and uninstall
         shell: pwsh
         run: ./scripts/test-installer.ps1
-      - run: ./scripts/package-chocolatey.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: nebula-docx-windows
           path: |
             release/*.exe
-            release/*.nupkg
-            release/SHA256SUMS.txt
             test-results/

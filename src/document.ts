@@ -7,7 +7,7 @@ import { renderAsync } from 'docx-preview'
 
 export const MAX_FILE_BYTES = 40 * 1024 * 1024
 export interface DocumentResult {
-  preview: string; markdown: string; bundleMarkdown: string
+  preview: string; markdown: string; bundleMarkdown: string; editableHtml: string
   images: { name: string; base64: string }[]
   headings: { text: string; level: number }[]
   words: number; pages: number; warnings: string[]
@@ -33,7 +33,7 @@ export async function readDocument(bytes: Uint8Array, name: string): Promise<Doc
   const container = document.createElement('div')
   const buffer = bytes.slice().buffer as ArrayBuffer
   const [conversion] = await Promise.all([
-    mammoth.convertToHtml({ arrayBuffer: buffer }, { externalFileAccess: false, styleMap: ["p[style-name='Title'] => h1:fresh"] }),
+    mammoth.convertToHtml({ arrayBuffer: buffer }, { externalFileAccess: false, styleMap: ["p[style-name='Title'] => h1:fresh", "br[type='page'] => br.nebula-page-break"] }),
     renderAsync(buffer.slice(0), container, undefined, { className: 'docx', inWrapper: true, breakPages: true, useBase64URL: true, renderHeaders: true, renderFooters: true, renderFootnotes: true, renderEndnotes: true, ignoreLastRenderedPageBreak: false, renderComments: false, renderAltChunks: false }),
   ])
   const pageRules: string[] = []
@@ -56,6 +56,7 @@ export async function readDocument(bytes: Uint8Array, name: string): Promise<Doc
       const header = content.createElement('th'); header.innerHTML = cell.innerHTML; cell.replaceWith(header)
     })
   })
+  const editableHtml = content.body.innerHTML
   const converter = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-', emDelimiter: '*' })
   converter.use(gfm)
   converter.addRule('wordTableCell', {
@@ -77,7 +78,7 @@ export async function readDocument(bytes: Uint8Array, name: string): Promise<Doc
   const warnings = [...new Set(conversion.messages.map(message => message.message))]
   const xml = await archive.file('word/document.xml')!.async('string')
   if (/<w:(?:drawing|pict)[\s>]/.test(xml)) warnings.push('Images are included where supported. Floating shapes, charts and text boxes may differ from Word.')
-  return { preview: previewShell(preview), markdown, bundleMarkdown: converter.turndown(content.body.innerHTML) + '\n', images, headings, words: text.trim() ? text.trim().split(/\s+/u).length : 0, pages: container.querySelectorAll('section.docx').length || 1, warnings }
+  return { preview: previewShell(preview), editableHtml, markdown, bundleMarkdown: converter.turndown(content.body.innerHTML) + '\n', images, headings, words: text.trim() ? text.trim().split(/\s+/u).length : 0, pages: container.querySelectorAll('section.docx').length || 1, warnings }
 }
 export async function markdownBundle(result: DocumentResult, basename: string) {
   const zip = new JSZip(); zip.file(`${basename}.md`, result.bundleMarkdown)

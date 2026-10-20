@@ -1,8 +1,8 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, session, clipboard } = require('electron')
-const { readFile, writeFile, stat, mkdir, mkdtemp, rm } = require('node:fs/promises')
+const { readFile, writeFile, stat, mkdir, mkdtemp, rm, rename } = require('node:fs/promises')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { createHash } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
 const os = require('node:os')
 
 app.setName('Nebula DOCX')
@@ -12,6 +12,7 @@ const development = !app.isPackaged && process.argv.includes('--dev')
 const devURL = 'http://127.0.0.1:5173'
 const rendererPath = path.join(__dirname, '../dist/index.html')
 let mainWindow, rendererReady = false, queuedPath, printing = false
+let documentDirty = false, confirmingClose = false
 const MAX_BYTES = 40 * 1024 * 1024
 const historyPath = () => path.join(app.getPath('userData'), 'recent-files.json')
 async function history() {
@@ -74,6 +75,16 @@ function createWindow() {
   harden(mainWindow)
   mainWindow.once('ready-to-show', () => mainWindow.show())
   mainWindow.on('closed', () => { mainWindow = null; rendererReady = false })
+  mainWindow.on('close', event => {
+    if (!documentDirty) return
+    event.preventDefault()
+    if (confirmingClose) return
+    confirmingClose = true
+    dialog.showMessageBox(mainWindow, { type: 'question', title: 'Unsaved changes', message: 'Close without saving your document?', detail: 'Use Save DOCX to save a copy before closing.', buttons: ['Keep editing', 'Discard changes'], defaultId: 0, cancelId: 0, noLink: true }).then(({ response }) => {
+      confirmingClose = false
+      if (response === 1 && mainWindow) { documentDirty = false; mainWindow.close() }
+    }).catch(() => { confirmingClose = false })
+  })
   if (development) mainWindow.loadURL(devURL)
   else mainWindow.loadFile(rendererPath)
 }
@@ -106,6 +117,21 @@ else {
       if (result.canceled || !result.filePath) return false
       await writeFile(result.filePath, bytes); return true
     })
+    handle('document:save-docx', async (name, bytes) => {
+      if (typeof name !== 'string' || !/\.docx$/i.test(name) || !(bytes instanceof Uint8Array) || bytes.length > MAX_BYTES || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error('Invalid DOCX save request.')
+      const result = await dialog.showSaveDialog(mainWindow, { title: 'Save DOCX copy', defaultPath: path.basename(name), filters: [{ name: 'Word document', extensions: ['docx'] }] })
+      if (result.canceled || !result.filePath) return null
+      if (!/\.docx$/i.test(result.filePath)) throw new Error('Choose a filename ending in .docx.')
+      const temporary = path.join(path.dirname(result.filePath), `.nebula-${randomUUID()}.tmp`)
+      try { await writeFile(temporary, bytes, { flag: 'wx' }); await rename(temporary, result.filePath) }
+      finally { await rm(temporary, { force: true }) }
+      return openDocument(result.filePath)
+    })
+    handle('document:confirm-discard', async () => {
+      const { response } = await dialog.showMessageBox(mainWindow, { type: 'question', title: 'Unsaved changes', message: 'Discard unsaved changes and open another document?', buttons: ['Keep editing', 'Discard changes'], defaultId: 0, cancelId: 0, noLink: true })
+      return response === 1
+    })
+    ipcMain.on('document:dirty', (event, dirty) => { if (trusted(event) && typeof dirty === 'boolean') documentDirty = dirty })
     handle('document:print', printDocument)
     handle('document:copy', text => {
       if (typeof text !== 'string' || Buffer.byteLength(text) > 180 * 1024 * 1024) throw new Error('Invalid clipboard request.')
@@ -113,8 +139,8 @@ else {
     })
     ipcMain.on('app:ready', event => { if (!trusted(event)) return; rendererReady = true; if (queuedPath) { const filename = queuedPath; queuedPath = null; void dispatchFile(filename) } })
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: 'File', submenu: [{ label: 'Open DOCX…', accelerator: 'CmdOrCtrl+O', click: () => command('open') }, { label: 'Export Markdown…', accelerator: 'CmdOrCtrl+S', click: () => command('save') }, { label: 'Print…', accelerator: 'CmdOrCtrl+P', click: () => command('print') }, { type: 'separator' }, { role: 'quit' }] },
-      { label: 'Edit', submenu: [{ role: 'copy' }, { role: 'selectAll' }] },
+      { label: 'File', submenu: [{ label: 'Open DOCX…', accelerator: 'CmdOrCtrl+O', click: () => command('open') }, { label: 'Save DOCX copy…', accelerator: 'CmdOrCtrl+S', click: () => command('saveDocx') }, { label: 'Export Markdown…', accelerator: 'CmdOrCtrl+Shift+M', click: () => command('exportMarkdown') }, { label: 'Print…', accelerator: 'CmdOrCtrl+P', click: () => command('print') }, { type: 'separator' }, { role: 'quit' }] },
+      { label: 'Edit', submenu: [{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
       { label: 'View', submenu: [{ role: 'togglefullscreen' }, ...(development ? [{ role: 'toggleDevTools' }] : [])] },
       { label: 'Help', submenu: [{ label: 'About Nebula DOCX', click: () => dialog.showMessageBox(mainWindow, { type: 'info', title: 'Nebula DOCX', message: `Nebula DOCX ${app.getVersion()}`, detail: 'Open, preview, print and convert Word documents.\nAll processing stays on your device.\n\nPreview layouts can differ from Microsoft Word.\nMIT License · github.com/Porkstone/nebula-docx' }) }] },
     ]))

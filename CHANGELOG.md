@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- Rename the installed application and installer download to `nebula-docx.exe`.
+- Add edit mode with text, headings, formatting, alignment, lists, links, tables, images and manual page breaks.
+- Save edited DOCX copies while keeping original headers, footers and final page/section settings.
+- Protect unsaved changes and support undo/redo, including exact original copies when all edits are undone.
+- Preview, print and export the current draft.
+- Pause Chocolatey package creation and submission.
+
 ## 1.0.0
 
 Initial Windows x64 release.

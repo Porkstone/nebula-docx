@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, Clipboard, FileText, FolderOpen, Layers, List, LoaderCircle, Maximize2, Minus, PanelLeftClose, Plus, Printer, Search, ShieldCheck, Sparkles, X, AlertCircle, FileCode2, Archive } from 'lucide-react'
+import { ArrowDownToLine, ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, Clipboard, FileText, FolderOpen, Layers, List, LoaderCircle, Maximize2, Minus, PanelLeftClose, Plus, Printer, Search, ShieldCheck, Sparkles, X, AlertCircle, FileCode2, Archive, Pencil, Save } from 'lucide-react'
 import { MAX_FILE_BYTES, markdownBundle, readDocument } from './document'
 import type { DocumentResult } from './document'
 import type { OpenedFile, RecentFile } from './native'
+import DocumentEditor from './DocumentEditor'
+import type { EditorHandle } from './DocumentEditor'
+type ViewMode = 'document' | 'markdown' | 'edit'
 
 export default function App() {
   const [file, setFile] = useState<OpenedFile | null>(null)
@@ -10,7 +13,11 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [mode, setMode] = useState<'document' | 'markdown'>('document')
+  const [mode, setMode] = useState<ViewMode>('document')
+  const [dirty, setDirty] = useState(false)
+  const [editorHtml, setEditorHtml] = useState('')
+  const [editorStarted, setEditorStarted] = useState(false)
+  const [editorKey, setEditorKey] = useState(0)
   const [zoom, setZoom] = useState(100)
   const [sidebar, setSidebar] = useState(true)
   const [query, setQuery] = useState('')
@@ -26,15 +33,27 @@ export default function App() {
   const iframe = useRef<HTMLIFrameElement>(null)
   const workspace = useRef<HTMLDivElement>(null)
   const sequence = useRef(0)
-  const actionRef = useRef({ open: () => {}, print: () => {}, save: () => {} })
+  const actionRef = useRef({ open: () => {}, print: () => {}, save: () => {}, saveDocx: () => {} })
+  const editor = useRef<EditorHandle>(null)
+  const dirtyRef = useRef(false)
+  const sourceFile = useRef<OpenedFile | null>(null)
+  const currentBytes = useRef<Uint8Array | null>(null)
+  const revision = useRef(0), appliedRevision = useRef(0)
 
   const openFile = useCallback(async (opened: OpenedFile) => {
+    if (dirtyRef.current) {
+      const discard = window.nebula ? await window.nebula.confirmDiscard() : window.confirm('Discard unsaved changes and open another document?')
+      if (!discard) return
+    }
     const ticket = ++sequence.current
     setBusy(true); setError(''); setNotice(''); setExporting(false)
     try {
       const parsed = await readDocument(new Uint8Array(opened.bytes), opened.name)
       if (ticket !== sequence.current) return
       setFile(opened); setResult(parsed); setMode('document'); setPage(1); setQuery(''); setShowWarnings(false)
+      sourceFile.current = opened; currentBytes.current = opened.bytes
+      revision.current = 0; appliedRevision.current = 0; dirtyRef.current = false
+      setDirty(false); setEditorStarted(false); setEditorHtml(parsed.editableHtml); setEditorKey(ticket)
       workspace.current?.scrollTo(0, 0)
       if (window.nebula) setRecent(await window.nebula.recent())
     } catch (err) { if (ticket === sequence.current) setError(err instanceof Error ? err.message : 'Could not open this document.') }
@@ -59,46 +78,100 @@ export default function App() {
     const removeCommand = bridge.onCommand(command => {
       if (command === 'open') actionRef.current.open()
       if (command === 'print') actionRef.current.print()
-      if (command === 'save') actionRef.current.save()
+      if (command === 'exportMarkdown') actionRef.current.save()
+      if (command === 'saveDocx') actionRef.current.saveDocx()
     })
     bridge.ready()
     return () => { removeOpen(); removeCommand() }
   }, [openFile])
   useEffect(() => { if (notice) { const timer = setTimeout(() => setNotice(''), 4500); return () => clearTimeout(timer) } }, [notice])
+  useEffect(() => {
+    dirtyRef.current = dirty
+    window.nebula?.setDirty(dirty)
+    const preventClose = (event: BeforeUnloadEvent) => { if (dirty && !window.nebula) { event.preventDefault(); event.returnValue = '' } }
+    window.addEventListener('beforeunload', preventClose)
+    return () => window.removeEventListener('beforeunload', preventClose)
+  }, [dirty])
+
+  const ensureCurrent = async () => {
+    if (!result || !file || !currentBytes.current) throw new Error('Open a document first.')
+    if (revision.current === appliedRevision.current || !editor.current || !sourceFile.current) return { result, bytes: currentBytes.current }
+    const model = editor.current.getJSON(), ticket = sequence.current, snapshot = revision.current
+    setBusy(true); setError('')
+    try {
+      const { writeEditedDocx } = await import('./editor-docx')
+      const bytes = editor.current.isOriginal() ? new Uint8Array(sourceFile.current.bytes) : await writeEditedDocx(model, new Uint8Array(sourceFile.current.bytes), sourceFile.current.name)
+      const updated = await readDocument(bytes, file.name)
+      if (ticket !== sequence.current) throw new Error('The document changed while the preview was being prepared.')
+      currentBytes.current = bytes; appliedRevision.current = snapshot
+      setResult(updated); setPage(1)
+      return { result: updated, bytes }
+    } finally { setBusy(false) }
+  }
+  const switchMode = async (next: ViewMode) => {
+    if (busy) return
+    try {
+      if (next === 'edit') setEditorStarted(true)
+      else if (result) await ensureCurrent()
+      setMode(next); workspace.current?.scrollTo(0, 0)
+    } catch (err) { setError(err instanceof Error ? err.message : 'The document could not be updated.') }
+  }
+  const download = (name: string, bytes: Uint8Array) => {
+    const url = URL.createObjectURL(new Blob([bytes.slice().buffer as ArrayBuffer]))
+    const link = document.createElement('a'); link.href = url; link.download = name; link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  const saveDocx = async () => {
+    if (!file || busy) return
+    try {
+      const { bytes } = await ensureCurrent()
+      setBusy(true)
+      const name = `${file.name.replace(/(?:-edited)?\.docx$/i, '')}-edited.docx`
+      if (window.nebula) {
+        const saved = await window.nebula.saveDocx(name, bytes)
+        if (!saved) return
+        setFile(saved); setRecent(await window.nebula.recent())
+      } else download(name, bytes)
+      editor.current?.markSaved(); dirtyRef.current = false; setDirty(false)
+      setNotice('DOCX copy saved successfully.')
+    } catch (err) { setError(err instanceof Error ? err.message : 'The DOCX file could not be saved.') }
+    finally { setBusy(false) }
+  }
 
   const save = async (bundle = false) => {
     if (!result || !file || busy) return
     setExporting(false)
     try {
+      const { result: updated } = await ensureCurrent()
       const base = file.name.replace(/\.docx$/i, '')
       const name = `${base}.${bundle ? 'zip' : 'md'}`
-      const bytes = bundle ? await markdownBundle(result, base) : new TextEncoder().encode(result.markdown)
+      const bytes = bundle ? await markdownBundle(updated, base) : new TextEncoder().encode(updated.markdown)
       if (window.nebula) { if (await window.nebula.save(name, bytes)) setNotice('Markdown exported successfully.') }
       else {
-        const url = URL.createObjectURL(new Blob([bytes.slice().buffer as ArrayBuffer]))
-        const link = document.createElement('a'); link.href = url; link.download = name; link.click()
-        setTimeout(() => URL.revokeObjectURL(url), 1000); setNotice('Markdown exported successfully.')
+        download(name, bytes); setNotice('Markdown exported successfully.')
       }
     } catch (err) { setError(err instanceof Error ? err.message : 'Export failed.') }
   }
   const print = async () => {
     if (!result || busy) return
     try {
+      const { result: updated } = await ensureCurrent()
       if (window.nebula) {
-        const response = await window.nebula.print(result.preview)
+        const response = await window.nebula.print(updated.preview)
         if (!response.success && response.reason && !/cancel/i.test(response.reason)) setError(response.reason)
-      } else { setMode('document'); setTimeout(() => iframe.current?.contentWindow?.print(), 100) }
+      } else { setMode('document'); setTimeout(() => iframe.current?.contentWindow?.print(), 150) }
     } catch (err) { setError(err instanceof Error ? err.message : 'Printing failed.') }
   }
-  actionRef.current = { open, print, save }
+  actionRef.current = { open, print, save, saveDocx }
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return
       const key = event.key.toLowerCase()
       if (key === 'o') { event.preventDefault(); void open() }
       if (key === 'p') { event.preventDefault(); void print() }
-      if (key === 's') { event.preventDefault(); void save() }
-      if (key === 'f') { event.preventDefault(); document.getElementById('document-search')?.focus() }
+      if (key === 's') { event.preventDefault(); void saveDocx() }
+      if (key === 'm' && event.shiftKey) { event.preventDefault(); void save() }
+      if (key === 'f') { event.preventDefault(); void switchMode('document').then(() => document.getElementById('document-search')?.focus()) }
     }
     window.addEventListener('keydown', listener)
     return () => window.removeEventListener('keydown', listener)
@@ -147,7 +220,8 @@ export default function App() {
   }
   const fit = () => setZoom(Math.max(25, Math.min(200, Math.floor(((workspace.current?.clientWidth ?? 900) - 96) / frameSize.width * 100))))
 
-  return <div className="app" onDragOver={event => { event.preventDefault(); setDragging(true) }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false) }} onDrop={async event => {
+  return <div className="app" onDragOver={event => { if (!Array.from(event.dataTransfer.types).includes('Files')) return; event.preventDefault(); setDragging(true) }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false) }} onDrop={async event => {
+    if (!event.dataTransfer.files.length) return
     event.preventDefault(); setDragging(false)
     const dropped = event.dataTransfer.files[0]
     if (dropped) await openBrowserFile(dropped)
@@ -161,35 +235,36 @@ export default function App() {
     <div className="app-body">
       {sidebar && <aside className="sidebar">
         <div className="sidebar-label">WORKSPACE<button className="icon-button" title="Hide sidebar" aria-label="Hide sidebar" onClick={() => setSidebar(false)}><PanelLeftClose size={16} /></button></div>
-        <button className="nav-item active" onClick={() => setMode('document')}><BookOpen size={17} /> Document viewer<span className="nav-dot" /></button>
+        <button className="nav-item active" onClick={() => void switchMode('document')}><BookOpen size={17} /> Document viewer<span className="nav-dot" /></button>
         <button className="open-sidebar" onClick={open}><Plus size={17} /> Open document<span className="shortcut">Ctrl O</span></button>
-        {result && <div className="document-outline"><div className="sidebar-label"><span>IN THIS DOCUMENT</span><List size={14} /></div>{result.headings.length ? result.headings.map((heading, index) => <button key={index} style={{ paddingLeft: 14 + (heading.level - 1) * 10 }} onClick={() => {
-          setMode('document')
+        {result && <div className="document-outline"><div className="sidebar-label"><span>IN THIS DOCUMENT</span><List size={14} /></div>{result.headings.length ? result.headings.map((heading, index) => <button key={index} style={{ paddingLeft: 14 + (heading.level - 1) * 10 }} onClick={async () => {
+          await switchMode('document')
           setTimeout(() => scrollToElement(Array.from(iframe.current?.contentDocument?.querySelectorAll('h1,h2,h3,h4,h5,h6,p') ?? []).find(el => el.textContent?.trim() === heading.text.trim())), 50)
         }}>{heading.text}</button>) : <p className="sidebar-hint">No headings in this document.</p>}</div>}
         <div className="recent"><div className="sidebar-label">RECENT DOCUMENTS<span>{recent.length.toString().padStart(2, '0')}</span></div>{recent.length ? recent.map(item => <button className="recent-file" key={item.id} title={item.name} onClick={async () => {
           try { if (window.nebula) await openFile(await window.nebula.openRecent(item.id)) } catch (err) { setError(err instanceof Error ? err.message : 'File is no longer available.') }
         }}><FileText size={17} /><span>{item.name}<small>{new Date(item.openedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small></span></button>) : <p className="sidebar-hint">Your next good read starts here.<br />Open a document to get started.</p>}</div>
-        <div className="sidebar-bottom"><span className="mini-logo"><Sparkles size={16} /></span><p>A little space for your words.<small>Nebula DOCX · v1.0.0</small></p></div>
+        <div className="sidebar-bottom"><span className="mini-logo"><Sparkles size={16} /></span><p>A little space for your words.<small>Nebula DOCX · v1.1.0</small></p></div>
       </aside>}
       <main className="main">
-        <div className="document-bar"><div className="document-title">{!sidebar && <button className="icon-button" aria-label="Show sidebar" onClick={() => setSidebar(true)}><List size={18} /></button>}<span className="file-badge"><FileText size={19} /></span><div><h1>{file ? file.name : 'Document workspace'}</h1><p>{file ? `${(file.bytes.byteLength / 1024).toFixed(1)} KB · Microsoft Word document` : 'A fresh perspective on your documents'}</p></div></div>
-          <div className="document-actions"><button className="button" onClick={open}><FolderOpen size={16} /> Open file</button><button className="button" onClick={print} disabled={!result || busy}><Printer size={16} /> Print</button><div className="export-wrap"><button className="button primary" disabled={!result || busy} onClick={() => setExporting(!exporting)}><ArrowDownToLine size={16} /> Export Markdown<ChevronDown size={14} /></button>{exporting && <><button className="menu-backdrop" aria-label="Close export menu" onClick={() => setExporting(false)} /><div className="export-menu"><button onClick={() => save()}><FileCode2 size={17} /><span>Markdown file<small>.md with embedded images</small></span></button><button onClick={() => save(true)}><Archive size={17} /><span>Markdown + images<small>.zip with a separate images folder</small></span></button></div></>}</div></div>
+        <div className="document-bar"><div className="document-title">{!sidebar && <button className="icon-button" aria-label="Show sidebar" onClick={() => setSidebar(true)}><List size={18} /></button>}<span className="file-badge"><FileText size={19} /></span><div><h1>{file ? file.name : 'Document workspace'}</h1>{dirty && <span className="unsaved-indicator">Unsaved changes</span>}<p>{file ? `${(file.bytes.byteLength / 1024).toFixed(1)} KB · Microsoft Word document` : 'A fresh perspective on your documents'}</p></div></div>
+          <div className="document-actions"><button className="button" onClick={open}><FolderOpen size={16} /> Open file</button><button className="button" onClick={saveDocx} disabled={!result || busy}><Save size={16} /> Save DOCX</button><button className="button" onClick={print} disabled={!result || busy}><Printer size={16} /> Print</button><div className="export-wrap"><button className="button primary" disabled={!result || busy} onClick={() => setExporting(!exporting)}><ArrowDownToLine size={16} /> Export Markdown<ChevronDown size={14} /></button>{exporting && <><button className="menu-backdrop" aria-label="Close export menu" onClick={() => setExporting(false)} /><div className="export-menu"><button onClick={() => save()}><FileCode2 size={17} /><span>Markdown file<small>.md with embedded images</small></span></button><button onClick={() => save(true)}><Archive size={17} /><span>Markdown + images<small>.zip with a separate images folder</small></span></button></div></>}</div></div>
         </div>
-        <div className="toolbar"><div className="view-tabs"><button className={mode === 'document' ? 'selected' : ''} onClick={() => setMode('document')}><BookOpen size={15} /> Document</button><button disabled={!result} className={mode === 'markdown' ? 'selected' : ''} onClick={() => setMode('markdown')}><FileCode2 size={15} /> Markdown</button></div>{result && <div className="tools"><div className="search-box"><Search size={14} /><input id="document-search" placeholder="Find in document" value={query} onChange={event => { setQuery(event.target.value); setMode('document') }} onKeyDown={event => { if (event.key === 'Enter') goToMatch(matchIndex + (event.shiftKey ? -1 : 1)); if (event.key === 'Escape') setQuery('') }} />{query && <><span>{matches.length ? `${matchIndex + 1}/${matches.length}` : '0'}</span><button className="icon-button" aria-label="Next search result" onClick={() => goToMatch(matchIndex + 1)}><ChevronDown size={13} /></button></>}</div><span className="divider" /><button className="icon-button" disabled={zoom <= 25} aria-label="Zoom out" onClick={() => setZoom(Math.max(25, zoom - 10))}><Minus size={15} /></button><span className="zoom">{zoom}%</span><button className="icon-button" disabled={zoom >= 200} aria-label="Zoom in" onClick={() => setZoom(Math.min(200, zoom + 10))}><Plus size={15} /></button><button className="icon-button" title="Fit to width" aria-label="Fit to width" onClick={fit}><Maximize2 size={15} /></button></div>}</div>
+        <div className="toolbar"><div className="view-tabs"><button className={mode === 'document' ? 'selected' : ''} onClick={() => void switchMode('document')}><BookOpen size={15} /> Document</button><button disabled={!result} className={mode === 'markdown' ? 'selected' : ''} onClick={() => void switchMode('markdown')}><FileCode2 size={15} /> Markdown</button><button disabled={!result || busy} className={mode === 'edit' ? 'selected' : ''} aria-pressed={mode === 'edit'} onClick={() => void switchMode('edit')}><Pencil size={15} /> Edit document</button></div>{result && mode !== 'edit' && <div className="tools"><div className="search-box"><Search size={14} /><input id="document-search" placeholder="Find in document" value={query} onChange={event => { setQuery(event.target.value); setMode('document') }} onKeyDown={event => { if (event.key === 'Enter') goToMatch(matchIndex + (event.shiftKey ? -1 : 1)); if (event.key === 'Escape') setQuery('') }} />{query && <><span>{matches.length ? `${matchIndex + 1}/${matches.length}` : '0'}</span><button className="icon-button" aria-label="Next search result" onClick={() => goToMatch(matchIndex + 1)}><ChevronDown size={13} /></button></>}</div><span className="divider" /><button className="icon-button" disabled={zoom <= 25} aria-label="Zoom out" onClick={() => setZoom(Math.max(25, zoom - 10))}><Minus size={15} /></button><span className="zoom">{zoom}%</span><button className="icon-button" disabled={zoom >= 200} aria-label="Zoom in" onClick={() => setZoom(Math.min(200, zoom + 10))}><Plus size={15} /></button><button className="icon-button" title="Fit to width" aria-label="Fit to width" onClick={fit}><Maximize2 size={15} /></button></div>}</div>
         {error && <div className="message error" role="alert"><AlertCircle size={17} /><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><X size={15} /></button></div>}
         {result?.warnings.length ? <div className="warnings"><button onClick={() => setShowWarnings(!showWarnings)}><AlertCircle size={14} /> {result.warnings.length} conversion {result.warnings.length === 1 ? 'note' : 'notes'}<ChevronDown size={13} /></button>{showWarnings && <ul>{result.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}</div> : null}
-        <div className={`workspace ${!result ? 'empty-workspace' : ''}`} ref={workspace} onScroll={() => {
+        <div className={`workspace ${!result ? 'empty-workspace' : ''} ${mode === 'edit' ? 'editing-workspace' : ''}`} ref={workspace} onScroll={() => {
           if (!result || mode !== 'document') return
           const pages = iframe.current?.contentDocument?.querySelectorAll('section.docx')
           if (pages) { let current = 1; pages.forEach((item, index) => { if (item.getBoundingClientRect().top * zoom / 100 <= (workspace.current?.scrollTop ?? 0) + 150) current = index + 1 }); setPage(current) }
         }}>
           {!result && !busy && <div className="welcome"><div className="eyebrow"><span /> ROOM TO READ</div><h2>Good documents deserve<br />a <em>clearer view.</em></h2><p>Open your Word documents, settle into the details,<br />and take your words wherever they need to go.</p><button className="drop-zone" onClick={open}><span className="document-illustration"><span className="illustration-back" /><span className="illustration-paper"><FileText size={39} strokeWidth={1.1} /><span className="docx-tag">DOCX</span></span><span className="illustration-plus"><Plus size={19} /></span></span><strong>Drop a document here</strong><span>or <u>browse your files</u> to get started</span><small>.docx files · up to 40 MB</small></button><div className="welcome-features"><span><BookOpen size={16} /> Read beautifully</span><span><Printer size={16} /> Print with ease</span><span><FileCode2 size={16} /> Make it Markdown</span></div><div className="privacy-note"><ShieldCheck size={15} /> Your files stay on your device. No uploads, no accounts.</div></div>}
+          {result && editorStarted && <DocumentEditor key={editorKey} ref={editor} html={editorHtml} active={mode === 'edit'} disabled={busy} onError={setError} onUpdate={changed => { revision.current++; dirtyRef.current = changed; setDirty(changed) }} />}
           {result && mode === 'document' && <div className="page-stage" style={{ width: frameSize.width * zoom / 100, height: frameSize.height * zoom / 100 }}><iframe ref={iframe} title="Document preview" sandbox="allow-same-origin allow-modals" srcDoc={result.preview} onLoad={frameLoaded} style={{ width: frameSize.width, height: frameSize.height, transform: `scale(${zoom / 100})` }} /></div>}
           {result && mode === 'markdown' && <div className="markdown-panel"><div className="markdown-heading"><span><FileCode2 size={17} /> MARKDOWN SOURCE</span><button className="button" onClick={async () => { try { if (window.nebula) await window.nebula.copy(result.markdown); else await navigator.clipboard.writeText(result.markdown); setNotice('Markdown copied to clipboard.') } catch { setError('Clipboard access failed. Use Export Markdown to save a file.') } }}><Clipboard size={14} /> Copy</button></div><pre><code>{result.markdown}</code></pre></div>}
-          {busy && <div className="loading" role="status"><LoaderCircle size={28} className="spin" /><strong>Opening your document…</strong><span>Preparing the preview and Markdown, right here.</span></div>}
+          {busy && <div className="loading" role="status"><LoaderCircle size={28} className="spin" /><strong>Preparing your document…</strong><span>Preparing the preview and Markdown, right here.</span></div>}
         </div>
-        <footer className="statusbar"><div><span className="status-dot" /> {busy ? 'Opening document' : result ? 'Ready to read' : 'Ready when you are'}{result && <><span className="status-separator">/</span>{result.words.toLocaleString()} words<span className="status-separator">/</span>{result.images.length} images</>}</div>{result ? <div className="page-controls"><button className="icon-button" disabled={page <= 1 || mode === 'markdown'} aria-label="Previous page" onClick={() => goToPage(page - 1)}><ArrowLeft size={13} /></button><span>Page {page} of {result.pages}</span><button className="icon-button" disabled={page >= result.pages || mode === 'markdown'} aria-label="Next page" onClick={() => goToPage(page + 1)}><ArrowRight size={13} /></button></div> : <span>Made for the words that matter.</span>}</footer>
+        <footer className="statusbar"><div><span className="status-dot" /> {busy ? 'Opening document' : result ? 'Ready to read' : 'Ready when you are'}{result && <><span className="status-separator">/</span>{result.words.toLocaleString()} words<span className="status-separator">/</span>{result.images.length} images</>}</div>{result ? <div className="page-controls"><button className="icon-button" disabled={page <= 1 || mode !== 'document'} aria-label="Previous page" onClick={() => goToPage(page - 1)}><ArrowLeft size={13} /></button><span>Page {page} of {result.pages}</span><button className="icon-button" disabled={page >= result.pages || mode !== 'document'} aria-label="Next page" onClick={() => goToPage(page + 1)}><ArrowRight size={13} /></button></div> : <span>Made for the words that matter.</span>}</footer>
       </main>
     </div>
     {dragging && <div className="drag-overlay"><FolderOpen size={48} /><h2>Drop to open your document</h2><p>Your files stay on this device.</p></div>}

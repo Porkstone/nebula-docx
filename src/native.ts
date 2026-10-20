@@ -5,6 +5,9 @@ export interface NativeBridge {
   recent: () => Promise<RecentFile[]>
   openRecent: (id: string) => Promise<OpenedFile>
   save: (name: string, bytes: Uint8Array) => Promise<boolean>
+  saveDocx: (name: string, bytes: Uint8Array) => Promise<OpenedFile | null>
+  setDirty: (dirty: boolean) => void
+  confirmDiscard: () => Promise<boolean>
   copy: (text: string) => Promise<void>
   print: (html: string) => Promise<{ success: boolean; reason?: string }>
   onOpen: (callback: (file: OpenedFile) => void) => () => void
